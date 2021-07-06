@@ -138,17 +138,18 @@ with open('toc.tmp', 'w+') as toc_file:
 
         toc_file.write(toc_line.to_toc_line() + '\n')
 
-check_call(['pdftocio', args.input_pdf, '-t', 'toc.tmp', '-o', output_pdf])
+tmp_pdf = f'{os.path.splitext(args.input_pdf)[0]}_tmp.pdf'
+check_call(['pdftocio', args.input_pdf, '-t', 'toc.tmp', '-o', tmp_pdf])
 
 # The first 18 pages of "Specifying Systems" are Roman-numeraled, and page 1
 # starts around the 19th. Note this in PDF metadata so apps' "jump to page"
 # feature works.
 assert introduction_page is not None, "Couldn't find 'Introduction' page"
 
-with open(output_pdf, 'rb+') as output_file:
-    output_bytes = output_file.read()
-    output_file.truncate(0)
+with open(tmp_pdf, 'rb') as tmp_file:
+    output_bytes = tmp_file.read()
 
+with open(output_pdf, 'wb+') as output_file:
     # The output PDF has one Catalog entry like:
     # <</Type/Catalog/Pages 1412 0 R/Outlines 1415 0 R>>
     # Add /PageLabels before /Outlines.
@@ -157,20 +158,17 @@ with open(output_pdf, 'rb+') as output_file:
     def replace_catalog(match):
         global n_catalogs
         n_catalogs += 1
-        catalog_start = match.group(1).decode()
-        catalog_end = match.group(2).decode()
+        catalog_start = match.group(1).decode('ascii')
+        catalog_end = match.group(2).decode('ascii')
         for catalog_part in catalog_start, catalog_end:
             assert '/PageLabels' not in catalog_part, \
                 f'PDF already has PageLabels in Category: {catalog_part}'
 
-        return f'''<<
-{catalog_start}
-/PageLabels << /Nums [ 0 << /S /r >> % start numbering in small Roman numerals
-                       18 << /S /D >> % page 19 and onward in Arabic decimals
-                     ]
-            >>
-{catalog_end}
->>'''.encode()
+        return (
+            f'''<<{catalog_start}''' 
+            f'''/PageLabels'''
+            f'''<</Nums[0 << /S /r >> {introduction_page - 1} << /S /D >>]>>''' 
+            f'''{catalog_end}>>'''.encode('ascii'))
 
     output_file.write(re.sub(
         rb'<<([\s\n]*/Type[\s\n]*/Catalog.*)(/Outlines.*)>>',
