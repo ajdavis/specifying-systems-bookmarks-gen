@@ -26,6 +26,10 @@ The structure of the book is:
       .
       .
     Index
+
+Limitation: clicking on the headings in the PDF's own table of contents won't
+jump to the contents. Only clicking in the bookmarks view in e.g. Preview.app's
+sidebar will navigate to the proper location.
 """
 import argparse
 import os
