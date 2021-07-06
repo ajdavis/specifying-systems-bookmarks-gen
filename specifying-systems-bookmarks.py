@@ -130,8 +130,52 @@ def gen_bookmarks():
 
 
 with open('toc.tmp', 'w+') as toc_file:
+    introduction_page = None
     for toc_line in gen_bookmarks():
+        if toc_line.title == "Introduction":
+            # We'll use this below.
+            introduction_page = toc_line.page
+
         toc_file.write(toc_line.to_toc_line() + '\n')
 
 check_call(['pdftocio', args.input_pdf, '-t', 'toc.tmp', '-o', output_pdf])
+
+# The first 18 pages of "Specifying Systems" are Roman-numeraled, and page 1
+# starts around the 19th. Note this in PDF metadata so apps' "jump to page"
+# feature works.
+assert introduction_page is not None, "Couldn't find 'Introduction' page"
+
+with open(output_pdf, 'rb+') as output_file:
+    output_bytes = output_file.read()
+    output_file.truncate(0)
+
+    # The output PDF has one Catalog entry like:
+    # <</Type/Catalog/Pages 1412 0 R/Outlines 1415 0 R>>
+    # Add /PageLabels before /Outlines.
+    n_catalogs = 0
+
+    def replace_catalog(match):
+        global n_catalogs
+        n_catalogs += 1
+        catalog_start = match.group(1).decode()
+        catalog_end = match.group(2).decode()
+        for catalog_part in catalog_start, catalog_end:
+            assert '/PageLabels' not in catalog_part, \
+                f'PDF already has PageLabels in Category: {catalog_part}'
+
+        return f'''<<
+{catalog_start}
+/PageLabels << /Nums [ 0 << /S /r >> % start numbering in small Roman numerals
+                       18 << /S /D >> % page 19 and onward in Arabic decimals
+                     ]
+            >>
+{catalog_end}
+>>'''.encode()
+
+    output_file.write(re.sub(
+        rb'<<([\s\n]*/Type[\s\n]*/Catalog.*)(/Outlines.*)>>',
+        replace_catalog, output_bytes, flags=re.MULTILINE))
+    assert n_catalogs > 0, f"Couldn't find /Catalog in {output_pdf}"
+    assert n_catalogs == 1, f"Too many catalog entries in {output_pdf}"
+
 print(output_pdf)
